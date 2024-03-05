@@ -8,10 +8,5 @@ setup(
     author='Simon Fester',
     author_email='syhester@gmail.com',
     url='https://github.com/simonfester/tsdbutils',
-    install_requires=[
-        # List your project's dependencies here.
-        # Examples:
-        # 'requests>=2.25.1',
-        # 'pandas>=1.2.3',
-    ],
+    py_modules=['tsdbutils'],
 )
