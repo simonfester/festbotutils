@@ -32,6 +32,20 @@ def log_message(level, message, **kwargs):
 ########################################
 
 async def ensure_table_setup(conn, table_name, column_definitions, primary_key=None, is_hypertable=False, hypertable_partition_column=None):
+    # Check if the table is already a hypertable
+    hypertable_check_query = f"""
+        SELECT EXISTS (
+            SELECT 1
+            FROM timescaledb_information.hypertables
+            WHERE hypertable_name = '{table_name}'
+        );
+    """
+    is_hypertable_result = await conn.fetchval(hypertable_check_query)
+    
+    if is_hypertable_result:
+        logger.info(f"Table {table_name} is already a hypertable.")
+        return
+
     query_parts = [f"CREATE TABLE IF NOT EXISTS {table_name} (", column_definitions]
     if primary_key:
         query_parts.append(f", PRIMARY KEY ({primary_key})")
@@ -41,12 +55,11 @@ async def ensure_table_setup(conn, table_name, column_definitions, primary_key=N
     await conn.execute(create_table_query)
     
     if is_hypertable:
-        create_hypertable_query = f"SELECT create_hypertable('{table_name}', '{hypertable_partition_column}');"
+        create_hypertable_query = f"SELECT create_hypertable('{table_name}', '{hypertable_partition_column}', if_not_exists => TRUE);"
         try:
             await conn.execute(create_hypertable_query)
         except Exception as e:
             logger.warning(f"Hypertable creation skipped (it might already exist): {e}")
-
 
 
 ####################################################
