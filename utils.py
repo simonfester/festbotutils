@@ -9,13 +9,16 @@ from logging.handlers import RotatingFileHandler
 import requests
 import asyncpg
 
-def set_logging():
+def set_logging(log_filename=None):
     log_dir = 'logs'
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
-    script_name = Path(__file__).stem
-    log_file = os.path.join(log_dir, f'{script_name}.log')
+    if log_filename is None:
+        script_name = Path(__file__).stem
+        log_filename = f'{script_name}.log'
+
+    log_file = os.path.join(log_dir, log_filename)
 
     # Create a rotating file handler
     file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
@@ -90,54 +93,22 @@ async def test_db_connectivity(db_url, token, chat_id):
         log_and_telegram(logging.ERROR, "An unexpected error occurred", token, chat_id, error=str(e))
         sys.exit(1)
 
-async def get_env():
-    glassnode_api_key_name = 'GLASSNODE_API_KEY'
-    db_url_name = 'TSDB_SERVICE_URL'
-    telegram_token_name = 'TELEGRAM_GLASSNODE_SIGNAL_BULL_MARKET_BOT'
-    telegram_chat_id_name = 'TELEGRAM_CHAT_ID'
+async def get_env(env_vars):
+    env_values = {}
+    missing_vars = []
 
-    API_KEY = os.getenv(glassnode_api_key_name)
-    DB_URL = os.getenv(db_url_name)
-    TELEGRAM_TOKEN = os.getenv(telegram_token_name)
-    TELEGRAM_CHAT_ID = os.getenv(telegram_chat_id_name)
+    for var in env_vars:
+        value = os.getenv(var)
+        if value is None:
+            missing_vars.append(var)
+        env_values[var] = value
 
-    logging.info(f"Loading {glassnode_api_key_name}, {db_url_name}, {telegram_token_name}, and {telegram_chat_id_name} from environment variables")
-    logging.info(f"{glassnode_api_key_name}: {API_KEY}")
-    logging.info(f"{db_url_name}: {DB_URL}")
-    logging.info(f"{telegram_token_name}: {TELEGRAM_TOKEN}")
-    logging.info(f"{telegram_chat_id_name}: {TELEGRAM_CHAT_ID}")
+    if missing_vars:
+        logging.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-    if API_KEY is None:
-        logging.error(f"{glassnode_api_key_name} not found")
-        log_and_telegram(logging.ERROR, f"{glassnode_api_key_name} not found", TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-        sys.exit(1)
-    if DB_URL is None:
-        logging.error(f"{db_url_name} not found")
-        log_and_telegram(logging.ERROR, f"{db_url_name} not found", TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-        sys.exit(1)
-    if TELEGRAM_TOKEN is None:
-        logging.info(f"{telegram_token_name} Loaded")
-    if TELEGRAM_CHAT_ID is None:
-        logging.error(f"{telegram_chat_id_name} not found")
-        sys.exit(1)
-
-    logging.info(f"{glassnode_api_key_name} Loaded")
-    logging.info(f"{db_url_name} Loaded")
-    logging.info(f"{telegram_token_name} Loaded")
-    logging.info(f"{telegram_chat_id_name} Loaded")
-    
-    # Extract host and port from DB_URL
-    from urllib.parse import urlparse
-    parsed_url = urlparse(DB_URL)
-    host = parsed_url.hostname
-    port = parsed_url.port
-
-    # Test port connectivity
-    test_port_connectivity(host, port, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-
-    await test_db_connectivity(DB_URL, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-
-    return API_KEY, DB_URL, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+    logging.info(f"Loaded environment variables: {', '.join(env_vars)}")
+    return env_values
 
 async def get_metrics_from_file():
     metric_file_name = 'input.json'
@@ -151,17 +122,14 @@ async def get_metrics_from_file():
     except FileNotFoundError:
         logging.error(f"Config file: {metric_file_name} not found in: {current_directory}")
         logging.error("Please create a config file named input.json")
-        log_and_telegram(logging.ERROR, f"Config file: {metric_file_name} not found in: {current_directory}")
-        sys.exit(1)
+        raise FileNotFoundError(f"Config file: {metric_file_name} not found in: {current_directory}")
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode JSON: {e}")
-        log_and_telegram(logging.ERROR, "Failed to decode JSON", TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, error=str(e))
-        sys.exit(1)
+        raise json.JSONDecodeError(f"Failed to decode JSON: {e}")
 
 def validate_config(config):
     required_fields = ['symbols', 'endpoints']
     for field in required_fields:
         if field not in config:
             logging.error(f"Missing required field in config: {field}")
-            log_and_telegram(logging.ERROR, f"Missing required field in config: {field}")
-            sys.exit(1)
+            raise ValueError(f"Missing required field in config: {field}")
