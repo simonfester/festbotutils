@@ -8,5 +8,5 @@ setup(
     author='Simon Fester',
     author_email='syhester@gmail.com',
     url='https://github.com/simonfester/festbotutils',
-    py_modules=['tsdbutils','utils],
+    py_modules=['tsdbutils','utils'],
 )
