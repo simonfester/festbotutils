@@ -1,14 +1,8 @@
 import os
-import logging
 import json
-import subprocess
-import traceback
+import logging
 import requests
 import aiohttp
-import asyncpg
-from datetime import datetime
-from pathlib import Path
-from logging.handlers import RotatingFileHandler
 
 def set_logging(log_filename=None):
     log_dir = 'logs'
@@ -16,13 +10,13 @@ def set_logging(log_filename=None):
         os.makedirs(log_dir)
     
     if log_filename is None:
-        script_name = Path(__file__).stem
+        script_name = os.path.splitext(os.path.basename(__file__))[0]
         log_filename = f'{script_name}.log'
 
     log_file = os.path.join(log_dir, log_filename)
 
     # Create a rotating file handler
-    file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
+    file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
     file_handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(formatter)
@@ -124,33 +118,8 @@ async def fetch_endpoints(api_key):
                 logging.error(f"Failed to fetch endpoints: {response.status}")
                 raise Exception(f"Failed to fetch endpoints: {response.status}")
 
-def extract_supported_metrics(endpoints_data):
-    supported_metrics = {}
-    for endpoint in endpoints_data:
-        path = endpoint["path"]
-        resolutions = set(endpoint["resolutions"])
-        assets = [asset["symbol"] for asset in endpoint["assets"]]
-        for asset in assets:
-            if asset not in supported_metrics:
-                supported_metrics[asset] = {}
-            supported_metrics[asset][path] = resolutions
-    return supported_metrics
-
-def validate_metrics(input_data, supported_metrics):
-    validated_data = []
-    for endpoint in input_data:
-        path = endpoint['path']
-        resolutions = set(endpoint['resolutions'])
-        assets = [asset['symbol'] for asset in endpoint['assets']]
-        for symbol in assets:
-            if symbol not in supported_metrics or path not in supported_metrics[symbol] or not resolutions.issubset(supported_metrics[symbol][path]):
-                logging.warning(f"Unsupported metric {path} for symbol {symbol} with resolutions {list(resolutions)}")
-            else:
-                validated_data.append(endpoint)
-    return validated_data
-
 async def get_metrics_from_file(api_key):
-    metric_file_name = '/mnt/data/input.json'
+    metric_file_name = 'input.json'
     current_directory = os.getcwd()
     try:
         with open(metric_file_name, 'r') as f:
@@ -158,15 +127,18 @@ async def get_metrics_from_file(api_key):
         logging.debug(f"Config file: {metric_file_name} loaded")
         
         endpoints = await fetch_endpoints(api_key)
-        supported_metrics = extract_supported_metrics(endpoints)
+        supported_metrics = {}
         
-        validated_data = validate_metrics(config, supported_metrics)
+        for endpoint in endpoints:
+            for asset in endpoint.get('assets', []):
+                if asset['symbol'] not in supported_metrics:
+                    supported_metrics[asset['symbol']] = {}
+                supported_metrics[asset['symbol']][endpoint['path']] = set(endpoint['resolutions'])
         
-        if not validated_data:
-            logging.error("No valid metrics found in the configuration.")
-            raise ValueError("No valid metrics found in the configuration.")
+        logging.debug(f"Supported metrics: {json.dumps(supported_metrics, indent=2)}")
         
-        return validated_data
+        updated_config = validate_config(config, supported_metrics)
+        return updated_config
     except FileNotFoundError:
         logging.error(f"Config file: {metric_file_name} not found in: {current_directory}")
         logging.error("Please create a config file named input.json")
@@ -174,3 +146,38 @@ async def get_metrics_from_file(api_key):
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode JSON: {e}")
         raise ValueError(f"Failed to decode JSON: {e.msg} at line {e.lineno} column {e.colno}")
+
+def validate_config(config, supported_metrics):
+    required_fields = ['path', 'assets', 'resolutions']
+    for metric in config:
+        for field in required_fields:
+            if field not in metric:
+                logging.error(f"Missing required field in config: {field}")
+                raise ValueError(f"Missing required field in config: {field}")
+    
+    supported_config = []
+    unsupported_metrics = []
+    
+    for metric in config:
+        path = metric['path']
+        assets = metric['assets']
+        resolutions = metric['resolutions']
+        
+        for asset in assets:
+            symbol = asset['symbol']
+            if symbol in supported_metrics and path in supported_metrics[symbol]:
+                supported_resolutions = supported_metrics[symbol][path]
+                unsupported_resolutions = [res for res in resolutions if res not in supported_resolutions]
+                if unsupported_resolutions:
+                    unsupported_metrics.append((symbol, path, unsupported_resolutions))
+                else:
+                    supported_config.append(metric)
+            else:
+                unsupported_metrics.append((symbol, path, resolutions))
+    
+    if unsupported_metrics:
+        error_messages = [f"Unsupported metric {metric} for symbol {symbol} with resolutions {resolutions}" for symbol, metric, resolutions in unsupported_metrics]
+        for error_message in error_messages:
+            logging.warning(error_message)
+    
+    return supported_config
