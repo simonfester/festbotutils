@@ -1,21 +1,20 @@
 import os
-import sys
 import logging
 import json
 import subprocess
 import traceback
+import requests
+import aiohttp
+import asyncpg
 from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-import requests
-import asyncpg
-import aiohttp
 
 def set_logging(log_filename=None):
     log_dir = 'logs'
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-
+    
     if log_filename is None:
         script_name = Path(__file__).stem
         log_filename = f'{script_name}.log'
@@ -125,8 +124,33 @@ async def fetch_endpoints(api_key):
                 logging.error(f"Failed to fetch endpoints: {response.status}")
                 raise Exception(f"Failed to fetch endpoints: {response.status}")
 
+def extract_supported_metrics(endpoints_data):
+    supported_metrics = {}
+    for endpoint in endpoints_data:
+        path = endpoint["path"]
+        resolutions = set(endpoint["resolutions"])
+        assets = [asset["symbol"] for asset in endpoint["assets"]]
+        for asset in assets:
+            if asset not in supported_metrics:
+                supported_metrics[asset] = {}
+            supported_metrics[asset][path] = resolutions
+    return supported_metrics
+
+def validate_metrics(input_data, supported_metrics):
+    validated_data = []
+    for endpoint in input_data:
+        path = endpoint['path']
+        resolutions = set(endpoint['resolutions'])
+        assets = [asset['symbol'] for asset in endpoint['assets']]
+        for symbol in assets:
+            if symbol not in supported_metrics or path not in supported_metrics[symbol] or not resolutions.issubset(supported_metrics[symbol][path]):
+                logging.warning(f"Unsupported metric {path} for symbol {symbol} with resolutions {list(resolutions)}")
+            else:
+                validated_data.append(endpoint)
+    return validated_data
+
 async def get_metrics_from_file(api_key):
-    metric_file_name = 'input.json'
+    metric_file_name = '/mnt/data/input.json'
     current_directory = os.getcwd()
     try:
         with open(metric_file_name, 'r') as f:
@@ -134,18 +158,15 @@ async def get_metrics_from_file(api_key):
         logging.debug(f"Config file: {metric_file_name} loaded")
         
         endpoints = await fetch_endpoints(api_key)
+        supported_metrics = extract_supported_metrics(endpoints)
         
-        supported_metrics = {}
-        for endpoint in endpoints:
-            path = endpoint['path']
-            for asset in endpoint['assets']:
-                symbol = asset['symbol']
-                if symbol not in supported_metrics:
-                    supported_metrics[symbol] = {}
-                supported_metrics[symbol][path] = endpoint['resolutions']
+        validated_data = validate_metrics(config, supported_metrics)
         
-        updated_config = validate_config(config, supported_metrics)
-        return updated_config
+        if not validated_data:
+            logging.error("No valid metrics found in the configuration.")
+            raise ValueError("No valid metrics found in the configuration.")
+        
+        return validated_data
     except FileNotFoundError:
         logging.error(f"Config file: {metric_file_name} not found in: {current_directory}")
         logging.error("Please create a config file named input.json")
@@ -153,35 +174,3 @@ async def get_metrics_from_file(api_key):
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode JSON: {e}")
         raise ValueError(f"Failed to decode JSON: {e.msg} at line {e.lineno} column {e.colno}")
-
-def validate_config(config, supported_metrics):
-    required_fields = ['symbols', 'endpoints']
-    for field in required_fields:
-        if field not in config:
-            logging.error(f"Missing required field in config: {field}")
-            raise ValueError(f"Missing required field in config: {field}")
-
-    unsupported_metrics = []
-    valid_endpoints = []
-    for endpoint in config['endpoints']:
-        valid_symbols = []
-        for symbol in config['symbols']:
-            if symbol in supported_metrics and endpoint['url_path'] in supported_metrics[symbol] and endpoint['interval'] in supported_metrics[symbol][endpoint['url_path']]:
-                valid_symbols.append(symbol)
-            else:
-                unsupported_metrics.append((symbol, endpoint['url_path'], endpoint['interval']))
-        
-        if valid_symbols:
-            valid_endpoints.append({**endpoint, 'symbols': valid_symbols})
-
-    if unsupported_metrics:
-        error_messages = [f"Unsupported metric {metric} for symbol {symbol} with resolution {interval}" for symbol, metric, interval in unsupported_metrics]
-        for error_message in error_messages:
-            logging.error(error_message)
-        if not valid_endpoints:
-            raise ValueError(f"Unsupported metrics found: {json.dumps(error_messages, indent=2)}")
-        else:
-            logging.warning(f"Some unsupported metrics found but continuing with valid metrics: {json.dumps(error_messages, indent=2)}")
-
-    config['endpoints'] = valid_endpoints
-    return config
