@@ -126,7 +126,7 @@ async def get_metrics_from_file():
         raise FileNotFoundError(f"Config file: {metric_file_name} not found in: {current_directory}")
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode JSON: {e}")
-        raise json.JSONDecodeError(f"Failed to decode JSON: {e}")
+        raise ValueError(f"Failed to decode JSON: {e.msg} at line {e.lineno} column {e.colno}")
 
 def validate_config(config):
     required_fields = ['symbols', 'endpoints']
