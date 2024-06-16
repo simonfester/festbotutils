@@ -84,7 +84,6 @@ async def insert_data(conn, table_name, records, columns, conflict_action=None, 
 
     # Create the INSERT INTO statement
     query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders}){conflict_clause}"
-    print(query)  # For debugging
     # Use executemany for inserting each record with the query
     await conn.executemany(query, records)
 
