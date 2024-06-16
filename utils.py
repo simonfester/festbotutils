@@ -142,6 +142,8 @@ async def get_metrics_from_file(api_key):
                     supported_metrics[asset['symbol']] = set()
                 supported_metrics[asset['symbol']].add(endpoint['path'])
         
+        logging.debug(f"Supported metrics: {json.dumps(supported_metrics, indent=2)}")
+        
         validate_config(config, supported_metrics)
         return config
     except FileNotFoundError:
@@ -169,4 +171,5 @@ def validate_config(config, supported_metrics):
         error_messages = [f"Unsupported metric {metric} for symbol {symbol}" for symbol, metric in unsupported_metrics]
         for error_message in error_messages:
             logging.error(error_message)
-        raise ValueError(f"Unsupported metrics found: {error_messages}")
+        raise ValueError(f"Unsupported metrics found: {json.dumps(error_messages, indent=2)}")
+
