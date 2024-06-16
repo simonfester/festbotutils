@@ -166,6 +166,7 @@ def validate_config(config, supported_metrics):
                 unsupported_metrics.append((symbol, endpoint['url_path']))
     
     if unsupported_metrics:
-        for symbol, metric in unsupported_metrics:
-            logging.error(f"Unsupported metric {metric} for symbol {symbol}")
-        raise ValueError(f"Unsupported metrics found: {unsupported_metrics}")
+        error_messages = [f"Unsupported metric {metric} for symbol {symbol}" for symbol, metric in unsupported_metrics]
+        for error_message in error_messages:
+            logging.error(error_message)
+        raise ValueError(f"Unsupported metrics found: {error_messages}")
