@@ -139,8 +139,8 @@ async def get_metrics_from_file(api_key):
         for endpoint in endpoints:
             for asset in endpoint.get('assets', []):
                 if asset['symbol'] not in supported_metrics:
-                    supported_metrics[asset['symbol']] = []
-                supported_metrics[asset['symbol']].append(endpoint['path'])
+                    supported_metrics[asset['symbol']] = set()
+                supported_metrics[asset['symbol']].add(endpoint['path'])
         
         validate_config(config, supported_metrics)
         return config
