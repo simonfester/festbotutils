@@ -9,6 +9,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import requests
 import asyncpg
+import aiohttp
 
 def set_logging(log_filename=None):
     log_dir = 'logs'
@@ -111,14 +112,37 @@ async def get_env(env_vars):
     logging.info(f"Loaded environment variables: {', '.join(env_vars)}")
     return env_values
 
-async def get_metrics_from_file():
+async def fetch_endpoints(api_key):
+    url = 'https://api.glassnode.com/v2/metrics/endpoints'
+    headers = {
+        'X-Api-Key': api_key
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                logging.error(f"Failed to fetch endpoints: {response.status}")
+                raise Exception(f"Failed to fetch endpoints: {response.status}")
+
+async def get_metrics_from_file(api_key):
     metric_file_name = 'input.json'
     current_directory = os.getcwd()
     try:
         with open(metric_file_name, 'r') as f:
             config = json.load(f)
         logging.debug(f"Config file: {metric_file_name} loaded")
-        validate_config(config)
+        
+        endpoints = await fetch_endpoints(api_key)
+        supported_metrics = {}
+        
+        for endpoint in endpoints:
+            for asset in endpoint.get('assets', []):
+                if asset['symbol'] not in supported_metrics:
+                    supported_metrics[asset['symbol']] = []
+                supported_metrics[asset['symbol']].append(endpoint['path'])
+        
+        validate_config(config, supported_metrics)
         return config
     except FileNotFoundError:
         logging.error(f"Config file: {metric_file_name} not found in: {current_directory}")
@@ -128,9 +152,20 @@ async def get_metrics_from_file():
         logging.error(f"Failed to decode JSON: {e}")
         raise ValueError(f"Failed to decode JSON: {e.msg} at line {e.lineno} column {e.colno}")
 
-def validate_config(config):
+def validate_config(config, supported_metrics):
     required_fields = ['symbols', 'endpoints']
     for field in required_fields:
         if field not in config:
             logging.error(f"Missing required field in config: {field}")
             raise ValueError(f"Missing required field in config: {field}")
+    
+    unsupported_metrics = []
+    for endpoint in config['endpoints']:
+        for symbol in config['symbols']:
+            if symbol not in supported_metrics or endpoint['url_path'] not in supported_metrics[symbol]:
+                unsupported_metrics.append((symbol, endpoint['url_path']))
+    
+    if unsupported_metrics:
+        for symbol, metric in unsupported_metrics:
+            logging.error(f"Unsupported metric {metric} for symbol {symbol}")
+        raise ValueError(f"Unsupported metrics found: {unsupported_metrics}")
