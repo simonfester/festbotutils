@@ -1,7 +1,14 @@
 import os
-import json
+import sys
 import logging
+import json
+import subprocess
+import traceback
+from datetime import datetime
+from pathlib import Path
+from logging.handlers import RotatingFileHandler
 import requests
+import asyncpg
 import aiohttp
 
 def set_logging(log_filename=None):
@@ -10,13 +17,13 @@ def set_logging(log_filename=None):
         os.makedirs(log_dir)
     
     if log_filename is None:
-        script_name = os.path.splitext(os.path.basename(__file__))[0]
+        script_name = Path(__file__).stem
         log_filename = f'{script_name}.log'
 
     log_file = os.path.join(log_dir, log_filename)
 
     # Create a rotating file handler
-    file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
+    file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
     file_handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(formatter)
@@ -133,10 +140,9 @@ async def get_metrics_from_file(api_key):
             for asset in endpoint.get('assets', []):
                 if asset['symbol'] not in supported_metrics:
                     supported_metrics[asset['symbol']] = {}
-                supported_metrics[asset['symbol']][endpoint['path']] = set(endpoint['resolutions'])
+                supported_metrics[asset['symbol']][endpoint['path']] = set(endpoint.get('resolutions', []))
         
-        logging.debug(f"Supported metrics: {json.dumps(supported_metrics, indent=2)}")
-        
+        # Validate the config and return the updated config
         updated_config = validate_config(config, supported_metrics)
         return updated_config
     except FileNotFoundError:
@@ -149,35 +155,44 @@ async def get_metrics_from_file(api_key):
 
 def validate_config(config, supported_metrics):
     required_fields = ['path', 'assets', 'resolutions']
-    for metric in config:
+    for endpoint in config:
         for field in required_fields:
-            if field not in metric:
+            if field not in endpoint:
                 logging.error(f"Missing required field in config: {field}")
                 raise ValueError(f"Missing required field in config: {field}")
-    
-    supported_config = []
+
+    updated_config = []
     unsupported_metrics = []
-    
-    for metric in config:
-        path = metric['path']
-        assets = metric['assets']
-        resolutions = metric['resolutions']
-        
+
+    for endpoint in config:
+        path = endpoint['path']
+        assets = endpoint['assets']
+        resolutions = endpoint['resolutions']
+
         for asset in assets:
             symbol = asset['symbol']
-            if symbol in supported_metrics and path in supported_metrics[symbol]:
-                supported_resolutions = supported_metrics[symbol][path]
-                unsupported_resolutions = [res for res in resolutions if res not in supported_resolutions]
-                if unsupported_resolutions:
-                    unsupported_metrics.append((symbol, path, unsupported_resolutions))
-                else:
-                    supported_config.append(metric)
-            else:
-                unsupported_metrics.append((symbol, path, resolutions))
-    
+            if symbol not in supported_metrics or path not in supported_metrics[symbol]:
+                unsupported_metrics.append((symbol, path))
+                continue
+
+            for resolution in resolutions:
+                if resolution not in supported_metrics[symbol][path]:
+                    unsupported_metrics.append((symbol, path, resolution))
+                    continue
+
+            # Add supported metrics to the updated config
+            updated_config.append({
+                'path': path,
+                'assets': [asset],
+                'resolutions': resolutions
+            })
+
     if unsupported_metrics:
-        error_messages = [f"Unsupported metric {metric} for symbol {symbol} with resolutions {resolutions}" for symbol, metric, resolutions in unsupported_metrics]
+        error_messages = [
+            f"Unsupported metric {entry[1]} for symbol {entry[0]}" + (f" with resolution {entry[2]}" if len(entry) == 3 else "")
+            for entry in unsupported_metrics
+        ]
         for error_message in error_messages:
             logging.warning(error_message)
-    
-    return supported_config
+
+    return updated_config
