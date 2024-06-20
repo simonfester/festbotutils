@@ -11,6 +11,32 @@ from urllib.parse import urlparse
 from tsdbutils import ensure_table_setup, insert_data
 from utils import set_logging, send_telegram_message, log_and_telegram, test_port_connectivity, test_db_connectivity, get_env, get_metrics_from_file
 
+def load_dataframes_from_input_file(config: dict) -> dict:
+    dataframes = {}
+    
+    for endpoint in config:
+        for asset in endpoint['assets']:
+            for resolution in endpoint['resolutions']:
+                metric_name = endpoint['path'].split('/')[-1]
+                symbol = asset['symbol'].lower()
+                file_path = f'data/raw/{symbol}_{resolution}_{metric_name}.parquet'
+                
+                if metric_name not in dataframes:
+                    df = pd.read_parquet(file_path)
+                    df.set_index('time', inplace=True)
+                    df = df[~df.index.duplicated(keep='first')]
+                    dataframes[metric_name] = df
+                else:
+                    df = pd.read_parquet(file_path)
+                    df.set_index('time', inplace=True)
+                    df = df[~df.index.duplicated(keep='first')]
+                    # Concatenate if multiple files need to be combined
+                    dataframes[metric_name] = pd.concat([dataframes[metric_name], df])
+    
+    return dataframes
+
+
+
 async def get_current_time():
     current_time = datetime.now(timezone.utc)
     current_time_unix = int(current_time.timestamp())
