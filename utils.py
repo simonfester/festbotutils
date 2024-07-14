@@ -4,7 +4,7 @@ import logging
 import json
 import subprocess
 import traceback
-from pathlib import Path
+from urllib.parse import urlparse
 import asyncpg
 import aiohttp
 
