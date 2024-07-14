@@ -8,7 +8,6 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 logger = logging.getLogger(__name__)
 
-# Function to load dataframes from input file (local storage)
 def load_dataframes_from_input_file(config: dict) -> dict:
     logger.debug("Loading dataframes from input file")
     dataframes = {}
@@ -34,10 +33,8 @@ def load_dataframes_from_input_file(config: dict) -> dict:
     logger.debug("Finished loading dataframes")
     return dataframes
 
-# Function to load dataframes from S3
 def load_dataframes_from_s3(bucket_name, config):
     logger.debug("Loading dataframes from S3")
-    s3_client = boto3.client('s3')
     dataframes = {}
 
     for endpoint in config:
@@ -46,16 +43,15 @@ def load_dataframes_from_s3(bucket_name, config):
             for resolution in endpoint['resolutions']:
                 metric_name = endpoint['path'].split('/')[-1]
                 symbol = asset['symbol'].lower()
-                file_key = f'data/raw/{symbol}_{resolution}_{metric_name}.parquet'
+                file_key = f's3://{bucket_name}/data/raw/{symbol}_{resolution}_{metric_name}.parquet'
 
                 try:
-                    obj = s3_client.get_object(Bucket=bucket_name, Key=file_key)
-                    df = pd.read_parquet(obj['Body'])
+                    df = pd.read_parquet(file_key, storage_options={"anon": False})
                     df.set_index('time', inplace=True)
                     df = df[~df.index.duplicated(keep='first')]
                     dataframes[metric_name] = df
                     logger.debug(f"Loaded new dataframe for {metric_name}")
-                except s3_client.exceptions.NoSuchKey:
+                except FileNotFoundError:
                     logger.warning(f"File {file_key} does not exist in S3 bucket {bucket_name}. Fetching all data.")
                     continue
                 except (NoCredentialsError, PartialCredentialsError) as e:
@@ -91,36 +87,26 @@ async def fetch_data_from_db(pool, table_name, since=None):
 
 async def save_data_from_db_to_df(symbol, resolution, endpoint_name, db_pool, storage_type='local', bucket_name=None):
     table_name = f"{symbol.lower()}_{resolution}_{endpoint_name}"
-    file_key = f'data/raw/{symbol.lower()}_{resolution}_{endpoint_name}.parquet'
+    file_key = f's3://{bucket_name}/data/raw/{symbol.lower()}_{resolution}_{endpoint_name}.parquet' if storage_type == 's3' else f'data/raw/{symbol.lower()}_{resolution}_{endpoint_name}.parquet'
     since = None
 
-    if storage_type == 's3' and bucket_name:
-        s3_client = boto3.client('s3')
-        try:
-            obj = s3_client.get_object(Bucket=bucket_name, Key=file_key)
-            df = pd.read_parquet(obj['Body'])
-            if not df.empty:
-                last_timestamp = df['time'].max().to_pydatetime().replace(tzinfo=timezone.utc)
-                buffer_time = get_buffer_time(resolution)
-                since = calculate_next_timestamp(last_timestamp.timestamp(), resolution) + buffer_time
-                logging.info(f"Last timestamp in {file_key} is {last_timestamp}. Fetching new data since {datetime.fromtimestamp(since, timezone.utc)} UTC")
-        except s3_client.exceptions.NoSuchKey:
-            logging.warning(f"File {file_key} does not exist in S3 bucket {bucket_name}. Fetching all data.")
-        except (NoCredentialsError, PartialCredentialsError) as e:
-            logging.error(f"Error with AWS credentials: {e}")
-            raise
-        except Exception as e:
-            logging.error(f"Error loading dataframe from S3: {e}")
-            logging.error(traceback.format_exc())
-            raise
-    else:
-        if os.path.exists(file_key):
-            df = pd.read_parquet(file_key)
-            if not df.empty:
-                last_timestamp = df['time'].max().to_pydatetime().replace(tzinfo=timezone.utc)
-                buffer_time = get_buffer_time(resolution)
-                since = calculate_next_timestamp(last_timestamp.timestamp(), resolution) + buffer_time
-                logging.info(f"Last timestamp in {file_key} is {last_timestamp}. Fetching new data since {datetime.fromtimestamp(since, timezone.utc)} UTC")
+    try:
+        if storage_type == 's3' and bucket_name:
+            df = pd.read_parquet(file_key, storage_options={"anon": False})
+        else:
+            if os.path.exists(file_key):
+                df = pd.read_parquet(file_key)
+        if not df.empty:
+            last_timestamp = df['time'].max().to_pydatetime().replace(tzinfo=timezone.utc)
+            buffer_time = get_buffer_time(resolution)
+            since = calculate_next_timestamp(last_timestamp.timestamp(), resolution) + buffer_time
+            logging.info(f"Last timestamp in {file_key} is {last_timestamp}. Fetching new data since {datetime.fromtimestamp(since, timezone.utc)} UTC")
+    except FileNotFoundError:
+        logging.warning(f"File {file_key} does not exist. Fetching all data.")
+    except Exception as e:
+        logging.error(f"Error loading dataframe: {e}")
+        logging.error(traceback.format_exc())
+        raise
 
     try:
         data = await fetch_data_from_db(db_pool, table_name, since)
@@ -143,10 +129,9 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
         logger.debug(f"Created new DataFrame for {symbol} {interval} {endpoint_name}")
 
     if storage_type == 's3' and bucket_name:
-        s3_client = boto3.client('s3')
-        buffer = df.to_parquet(index=False)
-        s3_client.put_object(Bucket=bucket_name, Key=f'data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet', Body=buffer)
-        logger.info(f"Data saved to s3://{bucket_name}/data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet with {len(df)} records")
+        file_key = f's3://{bucket_name}/data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet'
+        df.to_parquet(file_key, index=False, storage_options={"anon": False})
+        logger.info(f"Data saved to {file_key} with {len(df)} records")
     else:
         if not os.path.exists('data/raw'):
             os.makedirs('data/raw')
