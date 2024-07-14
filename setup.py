@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='festbotutils',
-    version='0.4.7',
+    version='0.4.8',
     packages=find_packages(),
     description='A utility library for working with time-series databases.',
     author='Simon Fester',
