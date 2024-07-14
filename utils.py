@@ -10,7 +10,14 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-def test_port_connectivity(host, port):
+async def combined_db_connectivity_test(db_url: str):
+    """Test both port and database connectivity."""
+    # Parse DB_URL to get host and port
+    parsed_url = urlparse(db_url)
+    host = parsed_url.hostname
+    port = parsed_url.port
+
+    # Test port connectivity
     try:
         result = subprocess.run(
             ['nc', '-zv', host, str(port)],
@@ -26,20 +33,6 @@ def test_port_connectivity(host, port):
             sys.exit(1)
     except Exception as e:
         logger.error(f"An error occurred while testing port connectivity: {e}")
-        logger.error(traceback.format_exc())
-        sys.exit(1)
-
-async def test_db_connectivity(db_url):
-    try:
-        logger.info(f"Testing connectivity to the database: {db_url}")
-        conn = await asyncpg.connect(db_url, timeout=10)
-        await conn.close()
-        logger.info("Successfully connected to the database.")
-    except (asyncpg.exceptions.ConnectionDoesNotExistError, asyncpg.exceptions.InvalidAuthorizationSpecificationError) as e:
-        logger.error(f"Failed to connect to the database: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
         logger.error(traceback.format_exc())
         sys.exit(1)
 
