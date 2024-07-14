@@ -159,3 +159,30 @@ def get_buffer_time(interval):
     buffer = buffer_time.get(interval, 0)
     logger.debug(f"Buffer time for interval {interval}: {buffer}")
     return buffer
+
+def load_dataframes_from_s3(bucket_name, prefix):
+    fs = s3fs.S3FileSystem(anon=False)
+    file_paths = fs.glob(f's3://{bucket_name}/{prefix}/*.parquet')
+    dataframes = {}
+
+    for file_path in file_paths:
+        try:
+            logger.info(f"Loading dataframe from {file_path}")
+            df = pd.read_parquet(file_path, storage_options={'anon': False})
+            dataframes[file_path.split('/')[-1].replace('.parquet', '')] = df
+        except Exception as e:
+            logger.error(f"Failed to load dataframe from {file_path}: {e}")
+            raise
+
+    return dataframes
+
+def save_data_to_s3(bucket_name, key, df):
+    fs = s3fs.S3FileSystem(anon=False)
+    file_path = f's3://{bucket_name}/{key}'
+    try:
+        logger.info(f"Saving dataframe to {file_path}")
+        with fs.open(file_path, 'wb') as f:
+            df.to_parquet(f, index=False)
+    except Exception as e:
+        logger.error(f"Failed to save dataframe to {file_path}: {e}")
+        raise
