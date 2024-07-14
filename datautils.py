@@ -161,6 +161,12 @@ def get_buffer_time(interval):
     logger.debug(f"Buffer time for interval {interval}: {buffer}")
     return buffer
 
+import logging
+import s3fs
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
 def load_dataframes_from_s3(bucket_name, prefix):
     fs = s3fs.S3FileSystem(anon=False)
     file_paths = fs.glob(f's3://{bucket_name}/{prefix}/*.parquet')
@@ -169,7 +175,8 @@ def load_dataframes_from_s3(bucket_name, prefix):
     for file_path in file_paths:
         try:
             logger.info(f"Loading dataframe from {file_path}")
-            df = pd.read_parquet(file_path, storage_options={'anon': False})
+            with fs.open(file_path, 'rb') as f:
+                df = pd.read_parquet(f)
             dataframes[file_path.split('/')[-1].replace('.parquet', '')] = df
         except Exception as e:
             logger.error(f"Failed to load dataframe from {file_path}: {e}")
