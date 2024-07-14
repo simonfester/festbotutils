@@ -4,6 +4,7 @@ import os
 import traceback
 from datetime import datetime, timezone
 import boto3
+import s3fs
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 logger = logging.getLogger(__name__)
