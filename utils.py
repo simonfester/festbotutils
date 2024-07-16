@@ -66,7 +66,12 @@ async def get_env(env_vars):
         raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     logger.info(f"Loaded environment variables: {', '.join(env_vars)}")
+
+    # Dynamically assign to global variables
+    globals().update(env_values)
+
     return env_values
+   
 
 async def fetch_endpoints(api_key):
     url = 'https://api.glassnode.com/v2/metrics/endpoints'
