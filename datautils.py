@@ -34,6 +34,13 @@ def load_dataframes_from_input_file(config: dict) -> dict:
     logger.debug("Finished loading dataframes")
     return dataframes
 
+import pandas as pd
+import logging
+import traceback
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
+logger = logging.getLogger(__name__)
+
 def load_dataframes_from_s3(bucket_name, config):
     logger.debug("Loading dataframes from S3")
     dataframes = {}
@@ -44,7 +51,7 @@ def load_dataframes_from_s3(bucket_name, config):
             for resolution in endpoint['resolutions']:
                 metric_name = endpoint['path'].split('/')[-1]
                 symbol = asset['symbol'].lower()
-                file_key = f's3://{bucket_name}/data/raw/{symbol}_{resolution}_{metric_name}.parquet'
+                file_key = f's3://{bucket_name}/{symbol}_{resolution}_{metric_name}.parquet'
 
                 try:
                     df = pd.read_parquet(file_key, storage_options={"anon": False})
@@ -65,6 +72,7 @@ def load_dataframes_from_s3(bucket_name, config):
 
     logger.debug("Finished loading dataframes")
     return dataframes
+
 
 async def fetch_data_from_db(pool, table_name, since=None):
     try:
