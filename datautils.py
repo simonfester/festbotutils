@@ -124,8 +124,7 @@ async def save_data_from_db_to_df(symbol, resolution, endpoint_name, db_pool, st
     except Exception as e:
         logging.error(f"Failed to fetch and save data for {symbol} {resolution} {endpoint_name}: {e}")
         logging.error(f"Traceback: {traceback.format_exc()}")
-
-
+        
 def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='local', bucket_name=None):
     logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
     new_df = pd.DataFrame([dict(row) for row in data])
@@ -143,8 +142,7 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
         df.to_parquet(file_key, index=False, storage_options={"anon": False})
         logger.info(f"Data saved to {file_key} with {len(df)} records")
     else:
-        df.to_parquet(f'{symbol.lower()}_{interval}_{endpoint_name}.parquet')
-        logger.info(f"Data saved to {symbol.lower()}_{interval}_{endpoint_name}.parquet with {len(df)} records")
+        logger.error("Unsupported storage type or missing bucket name.")
     logger.debug(f"DataFrame content: {df.head()}")
 
 
