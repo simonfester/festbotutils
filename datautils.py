@@ -117,6 +117,7 @@ async def save_data_from_db_to_df(symbol, resolution, endpoint_name, db_pool, st
         logging.error(f"Failed to fetch and save data for {symbol} {resolution} {endpoint_name}: {e}")
         logging.error(f"Traceback: {traceback.format_exc()}")
 
+
 def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='local', bucket_name=None):
     logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
     new_df = pd.DataFrame([dict(row) for row in data])
@@ -130,16 +131,14 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
         logger.debug(f"Created new DataFrame for {symbol} {interval} {endpoint_name}")
 
     if storage_type == 's3' and bucket_name:
-        file_key = f's3://{bucket_name}/data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet'
+        file_key = f's3://{bucket_name}/{symbol.lower()}_{interval}_{endpoint_name}.parquet'
         df.to_parquet(file_key, index=False, storage_options={"anon": False})
         logger.info(f"Data saved to {file_key} with {len(df)} records")
     else:
-        if not os.path.exists('data/raw'):
-            os.makedirs('data/raw')
-            logger.debug("Created data/raw directory")
-        df.to_parquet(f'data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet')
-        logger.info(f"Data saved to data/raw/{symbol.lower()}_{interval}_{endpoint_name}.parquet with {len(df)} records")
+        df.to_parquet(f'{symbol.lower()}_{interval}_{endpoint_name}.parquet')
+        logger.info(f"Data saved to {symbol.lower()}_{interval}_{endpoint_name}.parquet with {len(df)} records")
     logger.debug(f"DataFrame content: {df.head()}")
+
 
 def calculate_next_timestamp(last_unix_timestamp, interval):
     intervals = {
