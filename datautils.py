@@ -130,25 +130,32 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='local', bucket_name=None):
-    logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
+import logging
+import pandas as pd
+import s3fs
 
-    # Ensure the data is a list of dictionaries with the correct structure
-    if not all(isinstance(row, dict) and len(row) > 1 for row in data):
+logger = logging.getLogger(__name__)
+
+def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='s3', bucket_name=None):
+    logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
+    
+    # Check if data is in the correct format
+    if not isinstance(data, pd.DataFrame) and not all(isinstance(row, dict) and len(row) == 2 for row in data):
         logger.error(f"Data format is incorrect for {symbol} {interval} {endpoint_name}. Data: {data}")
         return
 
-    try:
+    # Create a DataFrame from the data
+    if isinstance(data, pd.DataFrame):
+        new_df = data
+    else:
         new_df = pd.DataFrame(data)
-    except ValueError as e:
-        logger.error(f"Error creating DataFrame: {e}")
-        return
-
-    if 'time' in new_df.columns:
-        new_df['time'] = pd.to_datetime(new_df['time'], unit='s', utc=True)
-
+    
+    # Ensure the 't' column is in datetime format
+    if 't' in new_df.columns:
+        new_df['t'] = pd.to_datetime(new_df['t'], unit='s', utc=True)
+    
     if existing_df is not None and not existing_df.empty:
-        df = pd.concat([existing_df, new_df]).drop_duplicates(subset='time').reset_index(drop=True)
+        df = pd.concat([existing_df, new_df]).drop_duplicates(subset='t').reset_index(drop=True)
         logger.debug(f"Concatenated new data with existing DataFrame for {symbol} {interval} {endpoint_name}")
     else:
         df = new_df
@@ -165,7 +172,6 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
         logger.error("Unsupported storage type or missing bucket name.")
     
     logger.debug(f"DataFrame content: {df.head()}")
-
 
 def calculate_next_timestamp(last_unix_timestamp, interval):
     intervals = {
