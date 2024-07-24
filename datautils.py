@@ -125,6 +125,7 @@ async def save_data_from_db_to_df(symbol, resolution, endpoint_name, db_pool, st
         logging.error(f"Failed to fetch and save data for {symbol} {resolution} {endpoint_name}: {e}")
         logging.error(f"Traceback: {traceback.format_exc()}")
         
+
 def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='local', bucket_name=None):
     logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
     new_df = pd.DataFrame([dict(row) for row in data])
@@ -144,6 +145,7 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
     else:
         logger.error("Unsupported storage type or missing bucket name.")
     logger.debug(f"DataFrame content: {df.head()}")
+
 
 
 def calculate_next_timestamp(last_unix_timestamp, interval):
