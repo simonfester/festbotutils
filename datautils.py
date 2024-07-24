@@ -125,13 +125,29 @@ async def save_data_from_db_to_df(symbol, resolution, endpoint_name, db_pool, st
         logging.error(f"Failed to fetch and save data for {symbol} {resolution} {endpoint_name}: {e}")
         logging.error(f"Traceback: {traceback.format_exc()}")
         
+import logging
+import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=None, storage_type='local', bucket_name=None):
     logger.debug(f"Saving data to DataFrame for {symbol} {interval} {endpoint_name}")
-    new_df = pd.DataFrame([dict(row) for row in data])
+
+    # Ensure the data is a list of dictionaries with the correct structure
+    if not all(isinstance(row, dict) and len(row) > 1 for row in data):
+        logger.error(f"Data format is incorrect for {symbol} {interval} {endpoint_name}. Data: {data}")
+        return
+
+    try:
+        new_df = pd.DataFrame(data)
+    except ValueError as e:
+        logger.error(f"Error creating DataFrame: {e}")
+        return
+
     if 'time' in new_df.columns:
         new_df['time'] = pd.to_datetime(new_df['time'], unit='s', utc=True)
-    if existing_df is not None:
+
+    if existing_df is not None and not existing_df.empty:
         df = pd.concat([existing_df, new_df]).drop_duplicates(subset='time').reset_index(drop=True)
         logger.debug(f"Concatenated new data with existing DataFrame for {symbol} {interval} {endpoint_name}")
     else:
@@ -140,12 +156,15 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
 
     if storage_type == 's3' and bucket_name:
         file_key = f's3://{bucket_name}/{symbol.lower()}_{interval}_{endpoint_name}.parquet'
-        df.to_parquet(file_key, index=False, storage_options={"anon": False})
-        logger.info(f"Data saved to {file_key} with {len(df)} records")
+        try:
+            df.to_parquet(file_key, index=False, storage_options={"anon": False})
+            logger.info(f"Data saved to {file_key} with {len(df)} records")
+        except Exception as e:
+            logger.error(f"Error saving DataFrame to S3: {e}")
     else:
         logger.error("Unsupported storage type or missing bucket name.")
+    
     logger.debug(f"DataFrame content: {df.head()}")
-
 
 
 def calculate_next_timestamp(last_unix_timestamp, interval):
