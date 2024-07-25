@@ -198,7 +198,7 @@ logger = logging.getLogger(__name__)
 def load_dataframes_from_s3(bucket_name, prefix):
     fs = s3fs.S3FileSystem(anon=False)
     file_paths = fs.glob(f's3://{bucket_name}/{prefix}/*.parquet')
-    dataframes = {}https://github.com/simonfester/festbotutils/blob/main/datautils.py
+    dataframes = {}
 
     for file_path in file_paths:
         try:
