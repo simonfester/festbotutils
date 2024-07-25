@@ -150,10 +150,6 @@ def save_data_to_dataframe(symbol, interval, endpoint_name, data, existing_df=No
     else:
         new_df = pd.DataFrame(data)
     
-    # Ensure the 't' column is in datetime format
-    if 't' in new_df.columns:
-        new_df['t'] = pd.to_datetime(new_df['t'], unit='s', utc=True)
-    
     if existing_df is not None and not existing_df.empty:
         df = pd.concat([existing_df, new_df]).drop_duplicates(subset='t').reset_index(drop=True)
         logger.debug(f"Concatenated new data with existing DataFrame for {symbol} {interval} {endpoint_name}")
@@ -202,7 +198,7 @@ logger = logging.getLogger(__name__)
 def load_dataframes_from_s3(bucket_name, prefix):
     fs = s3fs.S3FileSystem(anon=False)
     file_paths = fs.glob(f's3://{bucket_name}/{prefix}/*.parquet')
-    dataframes = {}
+    dataframes = {}https://github.com/simonfester/festbotutils/blob/main/datautils.py
 
     for file_path in file_paths:
         try:
